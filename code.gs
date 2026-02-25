@@ -5,7 +5,7 @@
 // But : Automatiser cette tâche et économiser du temps dans le futur
 
 ////////////////////////////////////////// Variables //////////////////////////////////////////
-var ID_FICHIER = PropertiesService.getScriptProperties().getProperty("FILE_ID");              // ID du fichier google sheet avec les tableaux d'heures de travail
+var FILE_ID = PropertiesService.getScriptProperties().getProperty("FILE_ID");              // ID du fichier google sheet avec les tableaux d'heures de travail
 var MY_EMAIL = PropertiesService.getScriptProperties().getProperty("MY_EMAIL");               // Mon adresse Email de l'école pour avoir une possiblité de validation double
 var BOSS_EMAIL = PropertiesService.getScriptProperties().getProperty("BOSS_EMAIL");           // Adresse Email des formateurs
 var TEACHER_EMAIL = PropertiesService.getScriptProperties().getProperty("TEACHER_EMAIL");     // Adresse Email de mon maître de stage
@@ -130,7 +130,7 @@ function GenerateHtmlReport() {
   var mondayDate = new Date(today.setDate(diff));
   var dateSheet = Utilities.formatDate(mondayDate, timezone, "dd.MM.yyyy");
 
-  var file = SpreadsheetApp.openById(ID_FICHIER);
+  var file = SpreadsheetApp.openById(FILE_ID);
   var sheets = file.getSheets();
   var activeSheet = null;
 
@@ -141,6 +141,8 @@ function GenerateHtmlReport() {
     }
   }
   if (!activeSheet) return null;
+
+  var sheetId = activeSheet.getSheetId();
 
   // On récupère les valeurs TEXTE et les valeurs RICHES ---
   var range = activeSheet.getRange("A2:K20");
@@ -161,7 +163,7 @@ function GenerateHtmlReport() {
   htmlBody += "<h2 style='" + h2Style + "'>Journal de travail</h2>";
   htmlBody += "<p style='margin-top: 0; color: #666;'>Semaine du " + dateSheet + "</p>";
   htmlBody += "<p>Bonjour,<br><br>Voici mon relevé d'heures et le résumé de mes activités.</p>";
-  htmlBody += "<p>📄 <a href='https://docs.google.com/spreadsheets/d/" + ID_FICHIER + "/edit?usp=sharing' style='" + linkStyle + "'>Accéder au fichier Google Sheet</a></p>";
+  htmlBody += "<p>📄 <a href='https://docs.google.com/spreadsheets/d/" + FILE_ID + "/edit?usp=sharing#gid=" + sheetId +"' style='" + linkStyle + "'>Accéder au fichier Google Sheet</a></p>";
   htmlBody += "</div><br>";
 
   // --- LE TABLEAU ---
@@ -169,6 +171,7 @@ function GenerateHtmlReport() {
   var thStyle = "background-color: #76a5af; color: white; padding: 10px; border: 1px solid #ccc; font-weight: bold;";
   var tdStyle = "padding: 8px; border: 1px solid #ccc; white-space: nowrap;";
   var bilanStyle = "background-color: #4a86e8; color: white; font-weight: bold; font-size: 14px; border: 1px solid #ccc; padding: 10px;";
+  var totalSupStyle = "background-color: #FFDF55; color: black; font-weight: bold; font-size: 14px; border: 1px solid #ccc; padding: 10px;";
 
   htmlBody += "<div style='overflow-x: auto;'>";
   htmlBody += "<table border='1' cellpadding='0' cellspacing='0' style='" + tableStyle + "'>";
@@ -186,12 +189,17 @@ function GenerateHtmlReport() {
   htmlBody += "</tr></thead><tbody>";
   
   var bilanLine = null;
+  var totalSup = null;
   for (var i = 0; i < data.length; i++) {
     var line = data[i];
     
     // Correction Bug Vendredi
     if (line[0].toString().toLowerCase().indexOf("bilan") > -1) { 
       bilanLine = line; 
+      continue; 
+    }
+    if (line[0].toString().toLowerCase().includes("cumul des heures sup :") && line[8] != ""){
+      totalSup = line;
       continue; 
     }
 
@@ -218,6 +226,13 @@ function GenerateHtmlReport() {
      htmlBody += "<td style='" + bilanStyle + "'>" + bilanLine[8] + "</td>";
      htmlBody += "</tr>";
   }
+  if (totalSup){
+    htmlBody += "<tr>";
+    htmlBody += "<td colspan='8' style='" + totalSupStyle + " text-align: right;'>Cumul des heures sup :</td>";
+    htmlBody += "<td style='" + totalSupStyle + "'>" + totalSup[8] + "</td>";
+    htmlBody += "</tr>";
+
+  }
   htmlBody += "</tbody></table></div>"; 
   
   // --- DETAILS ACTIVITES (AVEC LIENS) ---
@@ -228,37 +243,42 @@ function GenerateHtmlReport() {
     // --- MODIFICATION 2 : On charge la ligne Riche ---
     var richLine = richTextData[i]; 
 
+    if (line[0].toString().toLowerCase().includes("bilan") && line[9] !== ""){
+      var weekReview = ConvertRichText(richLine[9]);
+      htmlBody += "<div style='margin-top: 10px; color: #2a83cd;'>";
+      htmlBody += "<strong style='font-size:17px;'>Appréciation de la semaine :</strong><br> " + weekReview;
+      htmlBody += "</div>";
+    }
+
     if (!line[0] || (line[9] === "" && line[10] === "") || line[0].toString().toLowerCase().indexOf("bilan") > -1) continue;
     
-    var titre = line[0].charAt(0).toUpperCase() + line[0].slice(1);
+    var title = line[0].charAt(0).toUpperCase() + line[0].slice(1);
     
     // Bloc simple pour chaque jour
     htmlBody += "<div style='margin-bottom: 25px;'>";
     
     // Titre Journée
-    htmlBody += "<strong style='font-size: 16px; color: #2c3e50; display: block; margin-bottom: 5px; margin-top: 15px;'>" + titre + "</strong>";
+    htmlBody += "<strong style='font-size: 16px; color: #2c3e50; display: block; margin-bottom: 5px; margin-top: 15px;'>" + title + "</strong>";
     
     // Texte Activité (Converti en HTML avec liens)
     if (line[9] !== "") {
-      var texteAvecLiens = ConvertRichText(richLine[9]);
-      htmlBody += "<div style='color: #333; text-align: justify;'>" + texteAvecLiens + "</div>";
+      var textWithLinks = ConvertRichText(richLine[9]);
+      htmlBody += "<div style='color: #333; text-align: justify;'>" + textWithLinks + "</div>";
     }
     
     // Alerte Problème (Converti en HTML avec liens)
     if (line[10] !== "") {
-       var problemesAvecLiens = ConvertRichText(richLine[10]);
+       var problemsWithLinks = ConvertRichText(richLine[10]);
        htmlBody += "<div style='margin-top: 10px; color: #c0392b;'>";
-       htmlBody += "<strong>Problème :</strong> " + problemesAvecLiens;
+       htmlBody += "<strong>Problème :</strong> " + problemsWithLinks;
        htmlBody += "</div>";
     }
     htmlBody += "</div>"; 
   }
-
   // Pied de page
   htmlBody += "<br><hr style='border: 0; border-top: 1px solid #eee;'><br>";
   htmlBody += "Meilleures salutations,<br><strong>"+ FULL_NAME +"</strong>";
   htmlBody += "</div>"; // Fin global
-
   return htmlBody;
 }
 
